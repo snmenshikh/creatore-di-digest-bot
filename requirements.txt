@@ -1,0 +1,7 @@
+python-telegram-bot==20.5
+telethon
+pandas
+nltk
+python-docx
+apscheduler
+python-dotenv
