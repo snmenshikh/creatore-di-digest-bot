@@ -43,6 +43,7 @@ from telegram import (
     InputFile
 )
 from telegram.ext import (
+    Application,
     ApplicationBuilder, 
     CommandHandler, 
     MessageHandler, 
@@ -371,6 +372,25 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Файл получен и проверен. Теперь выберите интервал для дайджеста:", reply_markup=interval_keyboard())
     return WAITING_FOR_INTERVAL
 
+async def handle_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+
+    if text in ["Сутки", "Неделя", "Месяц"]:
+        context.user_data["interval"] = text
+        await update.message.reply_text(
+            f"⏳ Вы выбрали интервал: {text}\n\nТеперь введите ключевые слова или теги (через запятую):",
+            reply_markup=ReplyKeyboardRemove()
+        )
+    elif text == "Задайте произвольный интервал":
+        context.user_data["interval"] = "custom"
+        await update.message.reply_text(
+            "✍️ Введите произвольный интервал в формате: `YYYY-MM-DD до YYYY-MM-DD`",
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardRemove()
+        )
+    else:
+        await update.message.reply_text("⚠️ Пожалуйста, выберите один из предложенных интервалов.")
+
 # Callback for interval buttons
 async def interval_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -555,29 +575,58 @@ async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Main
 # -----------------------------
 def main():
+    # Инициализация БД
     init_db()
+
+    # Получаем токен безопасно
     token = get_telegram_token()
 
+    # Создаём приложение
     application = ApplicationBuilder().token(token).build()
 
+    # Определяем сценарий разговора
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
+        entry_points=[CommandHandler("start", start)],
+
         states={
-            WAITING_FOR_FILE: [MessageHandler(filters.Document.ALL, handle_file)],
-            WAITING_FOR_INTERVAL: [CallbackQueryHandler(interval_callback, pattern=r"^interval_")],
-            WAITING_FOR_CUSTOM_INTERVAL_FROM: [MessageHandler(filters.TEXT & ~filters.COMMAND, custom_interval_from)],
-            WAITING_FOR_CUSTOM_INTERVAL_TO: [MessageHandler(filters.TEXT & ~filters.COMMAND, custom_interval_to)],
-            WAITING_FOR_KEYWORDS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_keywords)]
+            # Ожидание загрузки Excel файла
+            WAITING_FOR_FILE: [
+                MessageHandler(filters.Document.ALL, handle_file)
+            ],
+
+            # Ожидание выбора интервала (кнопки)
+            WAITING_FOR_INTERVAL: [
+                CallbackQueryHandler(interval_callback, pattern=r"^interval_")
+            ],
+
+            # Ожидание ручного ввода "от"
+            WAITING_FOR_CUSTOM_INTERVAL_FROM: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, custom_interval_from)
+            ],
+
+            # Ожидание ручного ввода "до"
+            WAITING_FOR_CUSTOM_INTERVAL_TO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, custom_interval_to)
+            ],
+
+            # Ожидание ключевых слов
+            WAITING_FOR_KEYWORDS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_keywords)
+            ],
         },
-        fallbacks=[CommandHandler('cancel', cancel)]
+
+        fallbacks=[CommandHandler("cancel", cancel)]
     )
 
+    # Добавляем хендлеры
     application.add_handler(conv_handler)
-    application.add_handler(CommandHandler('schedule', schedule_digest_cmd))
-    application.add_handler(MessageHandler(filters.COMMAND, unknown))  # unknown commands handler
+    application.add_handler(CommandHandler("schedule", schedule_digest_cmd))
+    application.add_handler(MessageHandler(filters.COMMAND, unknown))  # обработка неизвестных команд
 
-    logger.info("Starting bot...")
+    # Логируем и запускаем
+    logger.info("🤖 Бот запущен...")
     application.run_polling()
 
+# Точка входа
 if __name__ == "__main__":
     main()
