@@ -53,21 +53,36 @@ from telegram.ext import (
     ConversationHandler
 )
 
+# Импорт хендлеров
+from handlers import (
+    handle_file,
+    interval_callback,
+    custom_interval_from,
+    custom_interval_to,
+    handle_keywords,
+    start,
+    cancel,
+    unknown,
+    schedule_digest_cmd
+)
+
 # -----------------------------
 # Конфиг и логирование
 # -----------------------------
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
-# Conversation states
-(
-    WAITING_FOR_FILE,
-    WAITING_FOR_INTERVAL,
-    WAITING_FOR_CUSTOM_INTERVAL_FROM,
-    WAITING_FOR_CUSTOM_INTERVAL_TO,
-    WAITING_FOR_KEYWORDS,
-    PROCESSING
-) = range(6)
+# -----------------------------
+# Состояния
+# -----------------------------
+WAITING_FOR_FILE = 1
+WAITING_FOR_INTERVAL = 2
+WAITING_FOR_CUSTOM_INTERVAL_FROM = 3
+WAITING_FOR_CUSTOM_INTERVAL_TO = 4
+WAITING_FOR_KEYWORDS = 5
 
 # NLTK setup (будет скачивать при первом запуске)
 nltk_resources = ["punkt", "stopwords"]
@@ -336,7 +351,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Обработка загруженного файла
 # -----------------------------
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id  # ✅ универсально
     document = update.message.document
 
     if not document:
@@ -344,8 +358,8 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return WAITING_FOR_FILE
 
     with tempfile.NamedTemporaryFile(delete=False) as tf:
-        file = await document.get_file()
-        await file.download_to_drive(tf.name)
+        tg_file = await document.get_file()
+        await tg_file.download_to_drive(tf.name)
         file_path = tf.name
 
     ext = os.path.splitext(document.file_name)[-1].lower()
@@ -360,10 +374,11 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Ошибка при чтении Excel: {e}")
         return WAITING_FOR_FILE
+    
+    # Сохраняем таблицу каналов для текущего пользователя
+    context.user_data["channels"] = df
 
-    save_channels(chat_id, df)  # ✅ сохраняем по chat_id
-
-    # показываем кнопки выбора интервала
+    # Отправляем кнопки выбора интервала
     keyboard = [
         [InlineKeyboardButton("Сутки", callback_data="interval_day")],
         [InlineKeyboardButton("Неделя", callback_data="interval_week")],
@@ -371,8 +386,8 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Задайте произвольный интервал", callback_data="interval_custom")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
     await update.message.reply_text("Выберите интервал времени:", reply_markup=reply_markup)
+
     return WAITING_FOR_INTERVAL
 
 async def handle_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -401,39 +416,33 @@ async def interval_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    chat_id = update.effective_chat.id  # ✅
     data = query.data.replace("interval_", "")
 
     if data == "custom":
         await query.edit_message_text("Введите дату начала интервала (ГГГГ-ММ-ДД):")
         return WAITING_FOR_CUSTOM_INTERVAL_FROM
     else:
-        save_interval(chat_id, data)
+        # Сохраняем выбранный интервал
+        context.user_data["interval"] = data
         await query.edit_message_text("Введите ключевые слова (через запятую):")
         return WAITING_FOR_KEYWORDS
 
-# Custom interval handlers
+# -----------------------------
+# Кастомный интервал: начало
+# -----------------------------
 async def custom_interval_from(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    text = update.message.text.strip()
-    try:
-        dt_from = datetime.fromisoformat(text)
-    except Exception:
-        await update.message.reply_text("Неверный формат даты. Пожалуйста введите в формате YYYY-MM-DD.")
-        return WAITING_FOR_CUSTOM_INTERVAL_FROM
-    CHAT_STATE[chat_id]["date_from"] = dt_from
-    await update.message.reply_text("Отлично. Теперь введите дату 'до' (YYYY-MM-DD).")
+    context.user_data["custom_from"] = update.message.text.strip()
+    await update.message.reply_text("Введите дату окончания интервала (ГГГГ-ММ-ДД):")
     return WAITING_FOR_CUSTOM_INTERVAL_TO
 
 # -----------------------------
 # Кастомный интервал: конец
 # -----------------------------
 async def custom_interval_to(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id  # ✅
     custom_from = context.user_data.get("custom_from")
     custom_to = update.message.text.strip()
+    context.user_data["interval"] = (custom_from, custom_to)
 
-    save_interval(chat_id, (custom_from, custom_to))
     await update.message.reply_text("Введите ключевые слова (через запятую):")
     return WAITING_FOR_KEYWORDS
 
@@ -441,16 +450,20 @@ async def custom_interval_to(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # Обработка ключевых слов
 # -----------------------------
 async def handle_keywords(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id  # ✅
     keywords = [k.strip() for k in update.message.text.split(",") if k.strip()]
+    context.user_data["keywords"] = keywords
 
-    save_keywords(chat_id, keywords)
-    await update.message.reply_text("Файл принят ✅\nИнтервал задан ✅\nКлючевые слова сохранены ✅\n\nГотовлю дайджест...")
+    await update.message.reply_text(
+        "Файл принят ✅\nИнтервал задан ✅\nКлючевые слова сохранены ✅\n\nГотовлю дайджест...",
+        reply_markup=ReplyKeyboardRemove()
+    )
 
-    # тут вызываем функцию генерации дайджеста
-    digest_path = generate_digest(chat_id)
+    # Тут вызываем функцию генерации дайджеста
+    # digest_path = generate_digest(context.user_data)
+    # Для примера пока просто заглушка
+    digest_path = "/app/data/digest_example.docx"
 
-    if digest_path and os.path.exists(digest_path):
+    if os.path.exists(digest_path):
         await update.message.reply_document(open(digest_path, "rb"), filename="digest.docx")
     else:
         await update.message.reply_text("Не удалось создать дайджест 😢")
@@ -576,54 +589,46 @@ def main():
     # Инициализация БД
     init_db()
 
-    # Получаем токен безопасно
+    # Получение токена бота безопасно
     token = get_telegram_token()
 
-    # Создаём приложение
+    # Создаем приложение
     application = ApplicationBuilder().token(token).build()
 
-    # Определяем сценарий разговора
+    # ConversationHandler для сценария загрузки файла и дайджеста
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
 
         states={
-            # Ожидание загрузки Excel файла
             WAITING_FOR_FILE: [
                 MessageHandler(filters.Document.ALL, handle_file)
             ],
-
-            # Ожидание выбора интервала (кнопки)
             WAITING_FOR_INTERVAL: [
                 CallbackQueryHandler(interval_callback, pattern=r"^interval_")
             ],
-
-            # Ожидание ручного ввода "от"
             WAITING_FOR_CUSTOM_INTERVAL_FROM: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, custom_interval_from)
             ],
-
-            # Ожидание ручного ввода "до"
             WAITING_FOR_CUSTOM_INTERVAL_TO: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, custom_interval_to)
             ],
-
-            # Ожидание ключевых слов
             WAITING_FOR_KEYWORDS: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_keywords)
-            ],
+            ]
         },
 
         fallbacks=[CommandHandler("cancel", cancel)]
     )
 
-    # Добавляем хендлеры
+    # Регистрация хендлеров
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler("schedule", schedule_digest_cmd))
-    application.add_handler(MessageHandler(filters.COMMAND, unknown))  # обработка неизвестных команд
+    application.add_handler(MessageHandler(filters.COMMAND, unknown))  # неизвестные команды
 
-    # Логируем и запускаем
+    # Старт бота
     logger.info("🤖 Бот запущен...")
     application.run_polling()
+
 
 # Точка входа
 if __name__ == "__main__":
