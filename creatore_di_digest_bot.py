@@ -53,19 +53,6 @@ from telegram.ext import (
     ConversationHandler
 )
 
-# Импорт хендлеров
-from handlers import (
-    handle_file,
-    interval_callback,
-    custom_interval_from,
-    custom_interval_to,
-    handle_keywords,
-    start,
-    cancel,
-    unknown,
-    schedule_digest_cmd
-)
-
 # -----------------------------
 # Конфиг и логирование
 # -----------------------------
