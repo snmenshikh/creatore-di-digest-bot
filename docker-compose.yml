@@ -1,9 +1,9 @@
 version: '3.9' # Версия Docker Compose файла
 
 services:
-  Creatore-di-Digest-bot: # Название сервиса (бота)
+  creatore-di-digest-bot: # Название сервиса (бота)
     build: . # Указывает Docker Compose, что образ нужно собрать из Dockerfile в текущей директории
-    container_name: Creatore_di_Digest_bot
+    container_name: creatore_di_digest_bot
     restart: always # Политика перезапуска: бот будет перезапускаться всегда
     environment: # Здесь будут передаваться переменные окружения
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN} # Placeholder для токена бота
