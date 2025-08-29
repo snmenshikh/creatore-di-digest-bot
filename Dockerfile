@@ -1,5 +1,3 @@
-# Используем официальный образ Python как базовый.
-# Выбираем версию 3.11 и slim для уменьшения размера образа.
 FROM python:3.11-slim
 
 # Установка системных пакетов
@@ -8,20 +6,20 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Устанавливаем рабочую директорию внутри контейнера.
-# Все последующие команды будут выполняться относительно этой директории.
+# Рабочая директория
 WORKDIR /app
 
-# Копируем файл requirements.txt в рабочую директорию.
-# Это делается первым, чтобы Docker мог кэшировать этот слой.
+# Создание папки под БД (с правами на запись)
+RUN mkdir -p /app/data && chmod -R 777 /app/data
+
+# Копируем зависимости
 COPY requirements.txt /app/
 
-# Устанавливаем зависимости из requirements.txt.
-# Используем --no-cache-dir для экономии места.
+# Устанавливаем Python-зависимости
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем весь остальной код бота в рабочую директорию.
-COPY . /app/
+# Копируем код
+COPY creatore_di_digest_bot.py /app/
 
 # Запуск бота
 CMD ["python", "creatore_di_digest_bot.py"]

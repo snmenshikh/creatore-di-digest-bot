@@ -116,18 +116,21 @@ def get_telethon_credentials() -> Tuple[Optional[str], Optional[str], Optional[s
 # -----------------------------
 # Простой SQLite кеш для сообщений
 # -----------------------------
-DB_PATH = "digest_cache.sqlite"
+# Путь к базе берём из переменной окружения или используем дефолт
+DB_PATH = os.getenv("DB_PATH", "/app/data/digest_cache.sqlite")
 
 def init_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)  # создаём папку если её нет
     conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS posts (
-        id TEXT PRIMARY KEY,
-        channel TEXT,
-        date TEXT,
-        text TEXT
-    )
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS digests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_name TEXT,
+            channel_link TEXT,
+            content TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
     """)
     conn.commit()
     conn.close()

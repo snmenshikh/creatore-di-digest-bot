@@ -9,6 +9,6 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN} # Placeholder для токена бота
       - TELETHON_API_ID=${TELETHON_API_ID}
       - TELETHON_API_HASH=${TELETHON_API_HASH}
+      - DB_PATH=/app/data/digest_cache.sqlite
     volumes:
       - ./data:/app/data
-      - ./digest_cache.sqlite:/app/digest_cache.sqlite
