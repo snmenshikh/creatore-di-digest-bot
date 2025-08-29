@@ -332,44 +332,47 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return WAITING_FOR_FILE
 
-# Handle document upload
+# -----------------------------
+# Обработка загруженного файла
+# -----------------------------
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tg_file = await update.message.document.get_file()
+    chat_id = update.effective_chat.id  # ✅ универсально
+    document = update.message.document
+
+    if not document:
+        await update.message.reply_text("Пожалуйста, загрузите Excel-файл.")
+        return WAITING_FOR_FILE
 
     with tempfile.NamedTemporaryFile(delete=False) as tf:
-        await tg_file.download_to_drive(tf.name)
+        file = await document.get_file()
+        await file.download_to_drive(tf.name)
         file_path = tf.name
 
-    ext = os.path.splitext(update.message.document.file_name)[-1].lower()
-
+    ext = os.path.splitext(document.file_name)[-1].lower()
     try:
         if ext == ".xlsx":
             df = pd.read_excel(file_path, engine="openpyxl")
         elif ext == ".xls":
             df = pd.read_excel(file_path, engine="xlrd")
         else:
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text="❌ Неподдерживаемый формат. Загрузите Excel-файл в формате .xls или .xlsx"
-            )
-            return
-
-        context.user_data["channels"] = df
-
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text="✅ Файл принят! Теперь выберите интервал времени."
-        )
+            await update.message.reply_text("Неподдерживаемый формат. Используйте .xls или .xlsx")
+            return WAITING_FOR_FILE
     except Exception as e:
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"⚠️ Ошибка при чтении Excel: {e}"
-        )
+        await update.message.reply_text(f"Ошибка при чтении Excel: {e}")
+        return WAITING_FOR_FILE
 
+    save_channels(chat_id, df)  # ✅ сохраняем по chat_id
 
-    CHAT_STATE[chat_id]["excel_path"] = tf.name
-    CHAT_STATE[chat_id]["channels_df"] = df
-    await update.message.reply_text("Файл получен и проверен. Теперь выберите интервал для дайджеста:", reply_markup=interval_keyboard())
+    # показываем кнопки выбора интервала
+    keyboard = [
+        [InlineKeyboardButton("Сутки", callback_data="interval_day")],
+        [InlineKeyboardButton("Неделя", callback_data="interval_week")],
+        [InlineKeyboardButton("Месяц", callback_data="interval_month")],
+        [InlineKeyboardButton("Задайте произвольный интервал", callback_data="interval_custom")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text("Выберите интервал времени:", reply_markup=reply_markup)
     return WAITING_FOR_INTERVAL
 
 async def handle_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -391,25 +394,23 @@ async def handle_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("⚠️ Пожалуйста, выберите один из предложенных интервалов.")
 
-# Callback for interval buttons
+# -----------------------------
+# Callback при выборе интервала
+# -----------------------------
 async def interval_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    chat_id = query.message.chat_id
-    data = query.data
-    if data.startswith("interval_"):
-        choice = data.split("_",1)[1]
-        if choice == "custom":
-            await query.edit_message_text("Задайте даты: сначала дату 'с' в формате YYYY-MM-DD (напр., 2025-08-01)")
-            return WAITING_FOR_CUSTOM_INTERVAL_FROM
-        else:
-            dt_from, dt_to = parse_interval_choice(choice)
-            CHAT_STATE[chat_id]["date_from"] = dt_from
-            CHAT_STATE[chat_id]["date_to"] = dt_to
-            CHAT_STATE[chat_id]["interval"] = choice
-            await query.edit_message_text(f"Интервал установлен: {choice} ({dt_from.date()} — {dt_to.date()})\n"
-                                          f"Теперь введите ключевые слова/теги через запятую (или одно слово).")
-            return WAITING_FOR_KEYWORDS
+
+    chat_id = update.effective_chat.id  # ✅
+    data = query.data.replace("interval_", "")
+
+    if data == "custom":
+        await query.edit_message_text("Введите дату начала интервала (ГГГГ-ММ-ДД):")
+        return WAITING_FOR_CUSTOM_INTERVAL_FROM
+    else:
+        save_interval(chat_id, data)
+        await query.edit_message_text("Введите ключевые слова (через запятую):")
+        return WAITING_FOR_KEYWORDS
 
 # Custom interval handlers
 async def custom_interval_from(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -424,39 +425,36 @@ async def custom_interval_from(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text("Отлично. Теперь введите дату 'до' (YYYY-MM-DD).")
     return WAITING_FOR_CUSTOM_INTERVAL_TO
 
+# -----------------------------
+# Кастомный интервал: конец
+# -----------------------------
 async def custom_interval_to(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    text = update.message.text.strip()
-    try:
-        dt_to = datetime.fromisoformat(text)
-    except Exception:
-        await update.message.reply_text("Неверный формат даты. Пожалуйста введите в формате YYYY-MM-DD.")
-        return WAITING_FOR_CUSTOM_INTERVAL_TO
-    dt_from = CHAT_STATE[chat_id].get("date_from")
-    if not dt_from:
-        await update.message.reply_text("Внутренняя ошибка — значение 'from' не задано. Начните заново (/start).")
-        return ConversationHandler.END
-    if dt_to < dt_from:
-        await update.message.reply_text("Дата 'до' должна быть позже даты 'с'. Попробуйте снова.")
-        return WAITING_FOR_CUSTOM_INTERVAL_TO
-    CHAT_STATE[chat_id]["date_to"] = dt_to
-    CHAT_STATE[chat_id]["interval"] = f"custom {dt_from.date()}-{dt_to.date()}"
-    await update.message.reply_text(f"Интервал установлен: {dt_from.date()} — {dt_to.date()}\n"
-                                    "Теперь введите ключевые слова/теги через запятую (или одно слово).")
+    chat_id = update.effective_chat.id  # ✅
+    custom_from = context.user_data.get("custom_from")
+    custom_to = update.message.text.strip()
+
+    save_interval(chat_id, (custom_from, custom_to))
+    await update.message.reply_text("Введите ключевые слова (через запятую):")
     return WAITING_FOR_KEYWORDS
 
-# Handle keywords input
+# -----------------------------
+# Обработка ключевых слов
+# -----------------------------
 async def handle_keywords(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    text = update.message.text.strip()
-    if not text:
-        await update.message.reply_text("Введите хотя бы одно слово или тег.")
-        return WAITING_FOR_KEYWORDS
-    keywords = [k.strip() for k in text.split(",") if k.strip()]
-    CHAT_STATE[chat_id]["keywords"] = keywords
-    await update.message.reply_text(f"Ключевые слова приняты: {', '.join(keywords)}\nНачинаю подготовку дайджеста — это может занять время.")
-    # proceed to processing
-    await process_digest_for_chat(chat_id, context)
+    chat_id = update.effective_chat.id  # ✅
+    keywords = [k.strip() for k in update.message.text.split(",") if k.strip()]
+
+    save_keywords(chat_id, keywords)
+    await update.message.reply_text("Файл принят ✅\nИнтервал задан ✅\nКлючевые слова сохранены ✅\n\nГотовлю дайджест...")
+
+    # тут вызываем функцию генерации дайджеста
+    digest_path = generate_digest(chat_id)
+
+    if digest_path and os.path.exists(digest_path):
+        await update.message.reply_document(open(digest_path, "rb"), filename="digest.docx")
+    else:
+        await update.message.reply_text("Не удалось создать дайджест 😢")
+
     return ConversationHandler.END
 
 # Core processing
