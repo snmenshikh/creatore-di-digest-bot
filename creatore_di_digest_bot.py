@@ -333,15 +333,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Handle document upload
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # получаем загруженный файл
     tg_file = await update.message.document.get_file()
 
-    # сохраняем временно
     with tempfile.NamedTemporaryFile(delete=False) as tf:
         await tg_file.download_to_drive(tf.name)
         file_path = tf.name
 
-    # определяем расширение
     ext = os.path.splitext(update.message.document.file_name)[-1].lower()
 
     try:
@@ -350,17 +347,24 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif ext == ".xls":
             df = pd.read_excel(file_path, engine="xlrd")
         else:
-            await update.message.reply_text(
-                "❌ Неподдерживаемый формат. Загрузите Excel-файл в формате .xls или .xlsx"
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="❌ Неподдерживаемый формат. Загрузите Excel-файл в формате .xls или .xlsx"
             )
             return
 
-        # если всё ок — сохраняем датафрейм в context.user_data
         context.user_data["channels"] = df
 
-        await update.message.reply_text("✅ Файл принят! Теперь выберите интервал времени.")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="✅ Файл принят! Теперь выберите интервал времени."
+        )
     except Exception as e:
-        await update.message.reply_text(f"⚠️ Ошибка при чтении Excel: {e}")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"⚠️ Ошибка при чтении Excel: {e}"
+        )
+
 
     CHAT_STATE[chat_id]["excel_path"] = tf.name
     CHAT_STATE[chat_id]["channels_df"] = df
