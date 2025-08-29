@@ -333,36 +333,34 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Handle document upload
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    if not update.message.document:
-        await update.message.reply_text("Отправьте, пожалуйста, файл формата .xlsx.")
-        return WAITING_FOR_FILE
-    doc = update.message.document
-    fname = doc.file_name or "channels.xlsx"
-    if not fname.lower().endswith((".xlsx", ".xls")):
-        await update.message.reply_text("Поддерживаются только файлы .xlsx / .xls")
-        return WAITING_FOR_FILE
-    # download file to temp
-    file = await context.bot.get_file(doc.file_id)
-    tf = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(fname)[1])
-    await file.download_to_drive(custom_path=tf.name)
-    # read excel
+    # получаем загруженный файл
+    tg_file = await update.message.document.get_file()
+
+    # сохраняем временно
+    with tempfile.NamedTemporaryFile(delete=False) as tf:
+        await tg_file.download_to_drive(tf.name)
+        file_path = tf.name
+
+    # определяем расширение
+    ext = os.path.splitext(update.message.document.file_name)[-1].lower()
+
     try:
-        df = pd.read_excel(tf.name)
-        if df.shape[1] < 2:
-            await update.message.reply_text("Excel должен содержать минимум 2 столбца (имя и адрес). Проверьте файл.")
-            return WAITING_FOR_FILE
-        # Normalize columns: take first two columns
-        df = df.iloc[:, :2]
-        df.columns = ["name", "address"]
-        # basic validation: addresses non-null
-        if df['address'].isnull().any():
-            await update.message.reply_text("В некоторых строках отсутствует адрес канала. Исправьте файл и отправьте снова.")
-            return WAITING_FOR_FILE
+        if ext == ".xlsx":
+            df = pd.read_excel(file_path, engine="openpyxl")
+        elif ext == ".xls":
+            df = pd.read_excel(file_path, engine="xlrd")
+        else:
+            await update.message.reply_text(
+                "❌ Неподдерживаемый формат. Загрузите Excel-файл в формате .xls или .xlsx"
+            )
+            return
+
+        # если всё ок — сохраняем датафрейм в context.user_data
+        context.user_data["channels"] = df
+
+        await update.message.reply_text("✅ Файл принят! Теперь выберите интервал времени.")
     except Exception as e:
-        logger.exception("Excel read error: %s", e)
-        await update.message.reply_text("Не удалось прочитать Excel-файл. Убедитесь, что файл корректен.")
-        return WAITING_FOR_FILE
+        await update.message.reply_text(f"⚠️ Ошибка при чтении Excel: {e}")
 
     CHAT_STATE[chat_id]["excel_path"] = tf.name
     CHAT_STATE[chat_id]["channels_df"] = df
