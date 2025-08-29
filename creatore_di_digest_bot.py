@@ -437,7 +437,9 @@ async def custom_interval_to(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # -----------------------------
 # Обработка ключевых слов
 # -----------------------------
-async def handle_keywords(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_keywords(update, context):
+    """Обработка ключевых слов и генерация дайджеста"""
+    # Получаем ключевые слова
     keywords = [k.strip() for k in update.message.text.split(",") if k.strip()]
     context.user_data["keywords"] = keywords
 
@@ -446,17 +448,51 @@ async def handle_keywords(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=ReplyKeyboardRemove()
     )
 
-    # Тут вызываем функцию генерации дайджеста
-    # digest_path = generate_digest(context.user_data)
-    # Для примера пока просто заглушка
-    digest_path = "/app/data/digest_example.docx"
+    # Генерация дайджеста
+    digest_path = generate_digest(context.user_data)
 
-    if os.path.exists(digest_path):
+    if digest_path and os.path.exists(digest_path):
         await update.message.reply_document(open(digest_path, "rb"), filename="digest.docx")
     else:
         await update.message.reply_text("Не удалось создать дайджест 😢")
 
     return ConversationHandler.END
+
+def generate_digest(user_data):
+    """
+    user_data: context.user_data
+        - channels: DataFrame с колонками [name, link]
+        - interval: 'day', 'week', 'month' или (from_date, to_date)
+        - keywords: список ключевых слов
+    """
+    channels = user_data.get("channels")
+    interval = user_data.get("interval")
+    keywords = user_data.get("keywords", [])
+
+    if channels is None or not keywords:
+        return None
+
+    # Пример текста дайджеста
+    digest_text = "📌 Дайджест по вашим каналам:\n\n"
+
+    # Проходим по всем каналам
+    for _, row in channels.iterrows():
+        channel_name = row[0]
+        channel_link = row[1]
+        # Заглушка текста поста; здесь можно подключить парсер каналов
+        digest_text += f"- {channel_name} ({channel_link}): пример текста поста с ключевыми словами {', '.join(keywords)}\n"
+
+    # Сохраняем в docx
+    output_dir = "/app/data"
+    os.makedirs(output_dir, exist_ok=True)
+    digest_path = os.path.join(output_dir, "digest.docx")
+
+    doc = Document()
+    doc.add_heading("Дайджест", 0)
+    doc.add_paragraph(digest_text)
+    doc.save(digest_path)
+
+    return digest_path
 
 # Core processing
 async def process_digest_for_chat(chat_id: int, context: ContextTypes.DEFAULT_TYPE):
