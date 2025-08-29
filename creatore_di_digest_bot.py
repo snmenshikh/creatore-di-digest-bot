@@ -38,6 +38,7 @@ from telegram import (
     Update, 
     InlineKeyboardButton, 
     InlineKeyboardMarkup, 
+    ReplyKeyboardRemove,
     KeyboardButton, 
     ReplyKeyboardMarkup, 
     InputFile
