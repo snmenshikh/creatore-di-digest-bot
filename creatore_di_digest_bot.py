@@ -141,7 +141,7 @@ async def handle_keywords(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Telegram post fetching + summarization
 # -----------------------------
 async def get_posts(client, channel_link, interval):
-    await client.start()
+    await client.start(bot_token=os.getenv("TELEGRAM_API_TOKEN"))
     channel = await client.get_entity(channel_link)
     now = datetime.utcnow()
 
@@ -183,7 +183,7 @@ async def generate_digest(user_data):
     if channels is None or not keywords:
         return None
 
-    await client.start()
+    await client.start(bot_token=os.getenv("TELEGRAM_API_TOKEN"))
 
     digest_text = "📌 Дайджест по вашим каналам:\n\n"
 
