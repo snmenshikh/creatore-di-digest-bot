@@ -10,13 +10,13 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Копируем зависимости
-COPY requirements.txt .
+COPY requirements.txt /app/
 
 # Устанавливаем Python-зависимости
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Копируем код
-COPY . .
+COPY creatore_di_digest_bot.py /app/
 
 # Запуск бота
 CMD ["python", "creatore_di_digest_bot.py"]
