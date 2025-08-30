@@ -117,6 +117,9 @@ def get_telethon_credentials() -> Tuple[Optional[str], Optional[str], Optional[s
     session = get_secret("TELETHON_SESSION")  # опционально
     return api_id, api_hash, session
 
+# Глобальная переменная для клиента
+client = TelegramClient('session_name', int(API_ID), API_HASH)
+
 # -----------------------------
 # Простой SQLite кеш для сообщений
 # -----------------------------
