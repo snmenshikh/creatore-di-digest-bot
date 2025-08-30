@@ -10,4 +10,4 @@ services:
       - telethon_api_hash=${telethon_api_hash}
       - telegram_bot_token=${telegram_bot_token}
     volumes:
-      - ./app:/app
+      - ./:/app
