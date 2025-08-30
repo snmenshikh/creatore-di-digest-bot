@@ -4,4 +4,3 @@ nltk==3.6.3
 openpyxl==3.0.9
 apscheduler==3.8.1
 python-docx==0.8.11
-pandas
