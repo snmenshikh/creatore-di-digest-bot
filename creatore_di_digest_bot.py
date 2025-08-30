@@ -24,15 +24,6 @@ nltk.download("stopwords")
 api_id = os.getenv("TELEGRAM_API_ID")
 api_hash = os.getenv("TELEGRAM_API_HASH")
 
-# Запрос номера телефона и код подтверждения
-async def start_client():
-    phone_number = input("Введите свой номер телефона (с кодом страны, например, +1234567890): ")
-    client = TelegramClient('session_name', int(api_id), api_hash)
-
-    await client.start(phone=phone_number)
-
-    return client
-
 # -----------------------------
 # Conversation states
 # -----------------------------
@@ -41,13 +32,14 @@ WAITING_FOR_INTERVAL = 2
 WAITING_FOR_CUSTOM_INTERVAL_FROM = 3
 WAITING_FOR_CUSTOM_INTERVAL_TO = 4
 WAITING_FOR_KEYWORDS = 5
+WAITING_FOR_PHONE = 6  # Состояние для запроса номера телефона
 
 # -----------------------------
 # Start & cancel handlers
 # -----------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Пришлите Excel-файл с каналами.")
-    return WAITING_FOR_FILE
+    await update.message.reply_text("Привет! Пожалуйста, отправьте свой номер телефона (с кодом страны, например, +1234567890).")
+    return WAITING_FOR_PHONE
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Операция отменена", reply_markup=ReplyKeyboardRemove())
@@ -55,6 +47,30 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Неизвестная команда. Используйте /start для начала.")
+
+# -----------------------------
+# Request phone number
+# -----------------------------
+async def request_phone_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Пожалуйста, отправьте свой номер телефона (с кодом страны, например, +1234567890):")
+    return WAITING_FOR_PHONE
+
+async def handle_phone_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    phone_number = update.message.text.strip()
+    if phone_number:
+        # Создаем и запускаем TelegramClient
+        client = TelegramClient('session_name', int(api_id), api_hash)
+        await client.start(phone=phone_number)  # Авторизация через номер телефона
+        await update.message.reply_text("Телефон успешно зарегистрирован!")
+
+        # Сохраняем клиент для дальнейшего использования
+        context.user_data["client"] = client
+
+        # Переходим к следующему шагу: загрузка файла
+        return WAITING_FOR_FILE
+    else:
+        await update.message.reply_text("Пожалуйста, отправьте действительный номер телефона.")
+        return WAITING_FOR_PHONE
 
 # -----------------------------
 # Handle Excel file
@@ -189,7 +205,7 @@ async def generate_digest(user_data):
     if channels is None or not keywords:
         return None
 
-    await client.start()
+    client = user_data.get("client")  # Используем уже авторизованный client
 
     digest_text = "📌 Дайджест по вашим каналам:\n\n"
 
@@ -223,18 +239,17 @@ async def generate_digest(user_data):
 # Main
 # -----------------------------
 async def main():
-    await start_client()  # Авторизация через номер телефона
-
     application = ApplicationBuilder().token(os.getenv("TELEGRAM_API_TOKEN")).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
+            WAITING_FOR_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_phone_number)],
             WAITING_FOR_FILE: [MessageHandler(filters.Document.ALL, handle_file)],
             WAITING_FOR_INTERVAL: [CallbackQueryHandler(interval_callback, pattern=r"^interval_")],
             WAITING_FOR_CUSTOM_INTERVAL_FROM: [MessageHandler(filters.TEXT & ~filters.COMMAND, custom_interval_from)],
             WAITING_FOR_CUSTOM_INTERVAL_TO: [MessageHandler(filters.TEXT & ~filters.COMMAND, custom_interval_to)],
-            WAITING_FOR_KEYWORDS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_keywords)]
+            WAITING_FOR_KEYWORDS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_keywords)],
         },
         fallbacks=[CommandHandler("cancel", cancel)]
     )
