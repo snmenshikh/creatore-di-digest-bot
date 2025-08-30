@@ -1,9 +1,8 @@
-version: '3.9'
+version: '3.7'
 
 services:
   creatore_di_digest_bot:
     build: .
-    restart: always
     container_name: creatore_di_digest_bot
     environment:
       - telethon_api_id=${telethon_api_id}
@@ -11,3 +10,4 @@ services:
       - telegram_bot_token=${telegram_bot_token}
     volumes:
       - ./:/app
+    restart: always
