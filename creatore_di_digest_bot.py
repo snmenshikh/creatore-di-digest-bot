@@ -6,8 +6,8 @@ from nltk.tokenize import sent_tokenize
 from nltk.corpus import stopwords
 from docx import Document
 from apscheduler.schedulers.blocking import BlockingScheduler
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, ReplyKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 import datetime
 
 # Загрузка необходимых ресурсов для nltk
@@ -25,9 +25,9 @@ client = TelegramClient('bot', API_ID, API_HASH)
 # Функция для безопасного хранения токенов (уже используется в Portainer через environment переменные)
 def get_tokens_from_env():
     return {
-        "api_id": os.getenv("API_ID"),
-        "api_hash": os.getenv("API_HASH"),
-        "bot_token": os.getenv("BOT_TOKEN")
+        "api_id": os.getenv("TELETHON_API_ID"),
+        "api_hash": os.getenv("TELETHON_API_HASH"),
+        "bot_token": os.getenv("TELEGRAM_BOT_TOKEN")
     }
 
 # Функция для обработки Excel файла
@@ -95,9 +95,9 @@ async def choose_interval(update: Update, context: CallbackContext):
 def scheduled_task():
     print("Отправка регулярного дайджеста")
 
-# Планируем задачу на утро (например, каждый день в 9 утра)
+# Планируем задачу на утро (например, каждый день в 7 утра)
 scheduler = BlockingScheduler()
-scheduler.add_job(scheduled_task, 'interval', days=1, start_date='2025-08-31 09:00:00')
+scheduler.add_job(scheduled_task, 'interval', days=1, start_date='2025-08-31 07:00:00')
 
 scheduler.start()
 
