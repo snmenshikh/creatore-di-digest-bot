@@ -11,4 +11,4 @@ COPY . /app
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Запуск бота
-CMD ["python", "creatore_di_digest_bot.py"]
+CMD ["python", "app/creatore_di_digest_bot.py"]
