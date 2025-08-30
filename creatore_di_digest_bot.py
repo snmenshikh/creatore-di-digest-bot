@@ -25,10 +25,10 @@ api_id = os.getenv("TELEGRAM_API_ID")
 api_hash = os.getenv("TELEGRAM_API_HASH")
 
 # Инициализация глобального клиента Telethon
-client = TelegramClient('session_name', int(api_id), api_hash)
+client = TelegramClient('session_name', api_id, api_hash)
 
 # -----------------------------
-# Conversation states
+# Состояния диалога с чатом
 # -----------------------------
 WAITING_FOR_FILE = 1
 WAITING_FOR_INTERVAL = 2
@@ -40,7 +40,7 @@ WAITING_FOR_KEYWORDS = 5
 # Start & cancel handlers
 # -----------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Пришлите Excel-файл с каналами.")
+    await update.message.reply_text("Привет! Пришли Excel-файл с именами/адресами каналов.")
     return WAITING_FOR_FILE
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
