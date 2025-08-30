@@ -239,6 +239,7 @@ async def generate_digest(user_data):
 # Main
 # -----------------------------
 async def main():
+    # Строим и запускаем приложение с учетом того, что цикл событий уже работает в run_polling
     application = ApplicationBuilder().token(os.getenv("TELEGRAM_API_TOKEN")).build()
 
     conv_handler = ConversationHandler(
@@ -257,10 +258,10 @@ async def main():
     application.add_handler(conv_handler)
     application.add_handler(MessageHandler(filters.COMMAND, unknown))
 
-    # Запуск бота без использования asyncio.run()
+    # Запускаем бота в режиме polling
     await application.run_polling()
 
+# Если скрипт запускается напрямую, вызываем main
 if __name__ == "__main__":
     import asyncio
-    # Используем await для запуска main()
-    asyncio.get_event_loop().run_until_complete(main())  # Запуск основного потока
+    asyncio.run(main())  # Запуск основного потока с asyncio
