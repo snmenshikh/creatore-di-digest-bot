@@ -437,9 +437,7 @@ async def custom_interval_to(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # -----------------------------
 # Обработка ключевых слов
 # -----------------------------
-async def handle_keywords(update, context):
-    """Обработка ключевых слов и генерация дайджеста"""
-    # Получаем ключевые слова
+async def handle_keywords(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keywords = [k.strip() for k in update.message.text.split(",") if k.strip()]
     context.user_data["keywords"] = keywords
 
@@ -448,8 +446,8 @@ async def handle_keywords(update, context):
         reply_markup=ReplyKeyboardRemove()
     )
 
-    # Генерация дайджеста
-    digest_path = generate_digest(context.user_data)
+    # Асинхронно вызываем generate_digest
+    digest_path = await generate_digest(context.user_data)  # Используем await здесь
 
     if digest_path and os.path.exists(digest_path):
         await update.message.reply_document(open(digest_path, "rb"), filename="digest.docx")
