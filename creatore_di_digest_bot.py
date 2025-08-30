@@ -256,8 +256,11 @@ async def main():
 
     application.add_handler(conv_handler)
     application.add_handler(MessageHandler(filters.COMMAND, unknown))
-    application.run_polling()
+
+    # Запуск бота без использования asyncio.run()
+    await application.run_polling()
 
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(main())  # Запуск основного потока
+    # Используем await для запуска main()
+    asyncio.get_event_loop().run_until_complete(main())  # Запуск основного потока
