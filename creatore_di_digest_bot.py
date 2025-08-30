@@ -21,8 +21,48 @@ nltk.download("stopwords")
 # -----------------------------
 # Получение API данных из переменных окружения
 # -----------------------------
-api_id = os.getenv("TELEGRAM_API_ID")
-api_hash = os.getenv("TELEGRAM_API_HASH")
+#api_id = os.getenv("TELEGRAM_API_ID")
+#api_hash = os.getenv("TELEGRAM_API_HASH")
+
+# -----------------------------
+# Безопасное получение секретов
+# -----------------------------
+def get_secret(name: str, docker_secret_path: Optional[str] = None) -> Optional[str]:
+    """
+    Получение секрета:
+    - Сначала пытаемcя прочитать Docker secret (по пути /run/secrets/<name>), если существует
+    - Иначе берем из переменных окружения
+    """
+    # Docker secrets location (standard)
+    secret_file = f"/run/secrets/{name}"
+    if os.path.exists(secret_file):
+        with open(secret_file, "r") as f:
+            return f.read().strip()
+    # fallback to env
+    return os.getenv(name)
+
+def get_telegram_token() -> str:
+    token = get_secret("TELEGRAM_BOT_TOKEN")
+    if not token:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN не задан. Установите в окружении или Docker Secret.")
+    return token
+
+def get_telethon_credentials() -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    Возвращает (api_id, api_hash, session_string).
+    Если api_id/api_hash заданы, можно использовать Telethon для чтения каналов.
+    Если session_string заданы — Telethon может использовать их.
+    """
+    api_id = get_secret("TELETHON_API_ID")
+    api_hash = get_secret("TELETHON_API_HASH")
+    session = get_secret("TELETHON_SESSION")  # опционально
+    return api_id, api_hash, session
+
+# choose Telethon if configured
+api_id, api_hash, session = get_telethon_credentials()
+use_telethon = False
+if api_id and api_hash:
+    use_telethon = True
 
 # Инициализация глобального клиента Telethon
 client = TelegramClient('session_name', int(api_id), api_hash)
