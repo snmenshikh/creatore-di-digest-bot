@@ -3,11 +3,11 @@ version: '3.9'
 services:
   creatore_di_digest_bot:
     build: .
+    restart: always
     container_name: creatore_di_digest_bot
     environment:
       - telethon_api_id=${telethon_api_id}
       - telethon_api_hash=${telethon_api_hash}
       - telegram_bot_token=${telegram_bot_token}
     volumes:
-      - ./app:/app
-    restart: always
+      - ./data:/app/data
