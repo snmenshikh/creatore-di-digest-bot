@@ -25,7 +25,7 @@ api_id = os.getenv("TELEGRAM_API_ID")
 api_hash = os.getenv("TELEGRAM_API_HASH")
 
 # Инициализация глобального клиента Telethon
-client = TelegramClient('session_name', api_id, api_hash)
+client = TelegramClient('session_name', int(api_id), api_hash)
 
 # -----------------------------
 # Состояния диалога с чатом
