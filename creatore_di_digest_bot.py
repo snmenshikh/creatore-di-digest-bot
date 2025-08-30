@@ -24,8 +24,14 @@ nltk.download("stopwords")
 api_id = os.getenv("TELEGRAM_API_ID")
 api_hash = os.getenv("TELEGRAM_API_HASH")
 
-# Инициализация глобального клиента Telethon
-client = TelegramClient('session_name', int(api_id), api_hash)
+# Запрос номера телефона и код подтверждения
+async def start_client():
+    phone_number = input("Введите свой номер телефона (с кодом страны, например, +1234567890): ")
+    client = TelegramClient('session_name', int(api_id), api_hash)
+
+    await client.start(phone=phone_number)
+
+    return client
 
 # -----------------------------
 # Conversation states
@@ -141,7 +147,7 @@ async def handle_keywords(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Telegram post fetching + summarization
 # -----------------------------
 async def get_posts(client, channel_link, interval):
-    await client.start(bot_token=os.getenv("TELEGRAM_API_TOKEN"))
+    await client.start()
     channel = await client.get_entity(channel_link)
     now = datetime.utcnow()
 
@@ -183,7 +189,7 @@ async def generate_digest(user_data):
     if channels is None or not keywords:
         return None
 
-    await client.start(bot_token=os.getenv("TELEGRAM_API_TOKEN"))
+    await client.start()
 
     digest_text = "📌 Дайджест по вашим каналам:\n\n"
 
@@ -216,7 +222,9 @@ async def generate_digest(user_data):
 # -----------------------------
 # Main
 # -----------------------------
-def main():
+async def main():
+    await start_client()  # Авторизация через номер телефона
+
     application = ApplicationBuilder().token(os.getenv("TELEGRAM_API_TOKEN")).build()
 
     conv_handler = ConversationHandler(
@@ -236,4 +244,5 @@ def main():
     application.run_polling()
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())  # Запуск основного потока
