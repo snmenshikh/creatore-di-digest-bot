@@ -458,13 +458,38 @@ async def handle_keywords(update, context):
 
     return ConversationHandler.END
 
-def generate_digest(user_data):
-    """
-    user_data: context.user_data
-        - channels: DataFrame с колонками [name, link]
-        - interval: 'day', 'week', 'month' или (from_date, to_date)
-        - keywords: список ключевых слов
-    """
+async def get_posts(channel_link, interval):
+    await client.start()
+    channel = await client.get_entity(channel_link)
+    now = datetime.utcnow()
+    
+    # Определяем дату начала интервала
+    if interval == "day":
+        start_date = now - timedelta(days=1)
+    elif interval == "week":
+        start_date = now - timedelta(weeks=1)
+    elif interval == "month":
+        start_date = now - timedelta(days=30)
+    elif isinstance(interval, tuple):
+        start_date = datetime.fromisoformat(interval[0])
+        end_date = datetime.fromisoformat(interval[1])
+    else:
+        start_date = now - timedelta(days=1)
+    end_date = now if not isinstance(interval, tuple) else end_date
+
+    posts_text = []
+    async for message in client.iter_messages(channel, offset_date=end_date, reverse=True):
+        if message.date < start_date:
+            break
+        if message.text:
+            posts_text.append((message.date, message.text))
+        else:
+            print(f"Message without text found: {message.date}")
+    
+    print(f"Found {len(posts_text)} posts in channel: {channel_link}")
+    return posts_text
+
+async def generate_digest(user_data):
     channels = user_data.get("channels")
     interval = user_data.get("interval")
     keywords = user_data.get("keywords", [])
@@ -472,17 +497,28 @@ def generate_digest(user_data):
     if channels is None or not keywords:
         return None
 
-    # Пример текста дайджеста
+    await client.start()
+
     digest_text = "📌 Дайджест по вашим каналам:\n\n"
 
-    # Проходим по всем каналам
     for _, row in channels.iterrows():
         channel_name = row[0]
         channel_link = row[1]
-        # Заглушка текста поста; здесь можно подключить парсер каналов
-        digest_text += f"- {channel_name} ({channel_link}): пример текста поста с ключевыми словами {', '.join(keywords)}\n"
 
-    # Сохраняем в docx
+        # Получаем посты
+        posts = await get_posts(channel_link, interval)
+        if not posts:
+            digest_text += f"{channel_name} ({channel_link}): Нет сообщений за этот интервал\n"
+            continue
+        
+        digest_text += f"--- {channel_name} ({channel_link}) ---\n"
+        for date, text in posts:
+            if text:  # Проверяем, что текст не пустой
+                summary = summarize_text(text, keywords)
+                digest_text += f"{date.date()}: {summary}\n"
+            else:
+                digest_text += f"{date.date()}: (Пустое сообщение)\n"
+
     output_dir = "/app/data"
     os.makedirs(output_dir, exist_ok=True)
     digest_path = os.path.join(output_dir, "digest.docx")
