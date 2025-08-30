@@ -11,6 +11,7 @@ from telethon import TelegramClient
 from docx import Document
 import nltk
 from nltk.tokenize import sent_tokenize
+from typing import List, Tuple, Optional
 
 # -----------------------------
 # NLTK
