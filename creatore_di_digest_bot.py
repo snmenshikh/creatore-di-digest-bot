@@ -7,7 +7,7 @@ from nltk.corpus import stopwords
 from docx import Document
 from apscheduler.schedulers.blocking import BlockingScheduler
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, ReplyKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, ReplyKeyboardMarkup
 import datetime
 
 # Загрузка необходимых ресурсов для nltk
@@ -25,9 +25,9 @@ client = TelegramClient('bot', API_ID, API_HASH)
 # Функция для безопасного хранения токенов (уже используется в Portainer через environment переменные)
 def get_tokens_from_env():
     return {
-        "api_id": os.getenv("TELETHON_API_ID"),
-        "api_hash": os.getenv("TELETHON_API_HASH"),
-        "bot_token": os.getenv("TELEGRAM_BOT_TOKEN")
+        "api_id": os.getenv("API_ID"),
+        "api_hash": os.getenv("API_HASH"),
+        "bot_token": os.getenv("BOT_TOKEN")
     }
 
 # Функция для обработки Excel файла
@@ -68,52 +68,50 @@ def create_digest(messages, filename="digest.docx"):
     doc.save(filename)
 
 # Функция для обработки команды /start
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text("Привет! Пожалуйста, отправьте мне Excel файл с каналами.")
+async def start(update: Update, context: CallbackContext):
+    await update.message.reply_text("Привет! Пожалуйста, отправьте мне Excel файл с каналами.")
 
 # Функция для обработки полученного файла
-def handle_file(update: Update, context: CallbackContext):
+async def handle_file(update: Update, context: CallbackContext):
     file = update.message.document.get_file()
     file.download('channels.xlsx')
     channels_df = validate_excel('channels.xlsx')
 
     if channels_df is None:
-        update.message.reply_text("Произошла ошибка при обработке файла.")
+        await update.message.reply_text("Произошла ошибка при обработке файла.")
         return
 
-    update.message.reply_text("Файл успешно загружен. Укажите интервал для дайджеста.")
+    await update.message.reply_text("Файл успешно загружен. Укажите интервал для дайджеста.")
 
 # Функция для выбора интервала
-def choose_interval(update: Update, context: CallbackContext):
+async def choose_interval(update: Update, context: CallbackContext):
     keyboard = [
         ['Сутки', 'Неделя', 'Месяц'],
         ['Произвольный интервал']
     ]
-    update.message.reply_text('Выберите интервал для дайджеста:', reply_markup=ReplyKeyboardMarkup(keyboard))
+    await update.message.reply_text('Выберите интервал для дайджеста:', reply_markup=ReplyKeyboardMarkup(keyboard))
 
 # Функция для отправки дайджеста (по расписанию)
 def scheduled_task():
     print("Отправка регулярного дайджеста")
 
-# Планируем задачу на утро (например, каждый день в 7 утра)
+# Планируем задачу на утро (например, каждый день в 9 утра)
 scheduler = BlockingScheduler()
-scheduler.add_job(scheduled_task, 'interval', days=1, start_date='2025-08-31 07:00:00')
+scheduler.add_job(scheduled_task, 'interval', days=1, start_date='2025-08-31 09:00:00')
 
 scheduler.start()
 
 # Функция для запуска бота
 def main():
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dispatcher = updater.dispatcher
+    application = Application.builder().token(BOT_TOKEN).build()
 
     # Обработчики
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(MessageHandler(Filters.document.mime_type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), handle_file))
-    dispatcher.add_handler(MessageHandler(Filters.text, choose_interval))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_file))
+    application.add_handler(MessageHandler(filters.TEXT, choose_interval))
 
     # Запуск бота
-    updater.start_polling()
-    updater.idle()
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
