@@ -1,12 +1,8 @@
 import os
 import pandas as pd
-import tempfile
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
-    ConversationHandler, ContextTypes, filters
-)
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ConversationHandler, ContextTypes, filters
 from telethon import TelegramClient
 from docx import Document
 import nltk
@@ -30,9 +26,7 @@ api_hash = os.getenv("TELEGRAM_API_HASH")
 WAITING_FOR_PHONE = 1
 WAITING_FOR_FILE = 2
 WAITING_FOR_INTERVAL = 3
-WAITING_FOR_CUSTOM_INTERVAL_FROM = 4
-WAITING_FOR_CUSTOM_INTERVAL_TO = 5
-WAITING_FOR_KEYWORDS = 6
+WAITING_FOR_KEYWORDS = 4
 
 # -----------------------------
 # Start & cancel handlers
@@ -54,7 +48,6 @@ async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_phone_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     phone_number = update.message.text.strip()
     if phone_number:
-        # Авторизация через номер телефона
         client = TelegramClient('session_name', int(api_id), api_hash)
         await client.start(phone=phone_number)
         context.user_data["client"] = client
@@ -70,7 +63,7 @@ async def handle_phone_number(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     document = update.message.document
     if not document:
-        await update.message.reply_text("Пожалуйста, загрузите Excel-файл.")
+        await update.message.reply_text("Пожалуйста, загрузите Excel-файл с каналами.")
         return WAITING_FOR_FILE
 
     with tempfile.NamedTemporaryFile(delete=False) as tf:
@@ -92,7 +85,6 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return WAITING_FOR_FILE
 
     context.user_data["channels"] = df
-
     keyboard = [
         [InlineKeyboardButton("Сутки", callback_data="interval_day")],
         [InlineKeyboardButton("Неделя", callback_data="interval_week")],
@@ -110,28 +102,12 @@ async def interval_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data.replace("interval_", "")
-    if data == "custom":
-        await query.edit_message_text("Введите дату начала интервала (ГГГГ-ММ-ДД):")
-        return WAITING_FOR_CUSTOM_INTERVAL_FROM
-    else:
-        context.user_data["interval"] = data
-        await query.edit_message_text("Введите ключевые слова (через запятую):")
-        return WAITING_FOR_KEYWORDS
-
-async def custom_interval_from(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["custom_from"] = update.message.text.strip()
-    await update.message.reply_text("Введите дату окончания интервала (ГГГГ-ММ-ДД):")
-    return WAITING_FOR_CUSTOM_INTERVAL_TO
-
-async def custom_interval_to(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    custom_from = context.user_data.get("custom_from")
-    custom_to = update.message.text.strip()
-    context.user_data["interval"] = (custom_from, custom_to)
-    await update.message.reply_text("Введите ключевые слова (через запятую):")
+    context.user_data["interval"] = data
+    await query.edit_message_text("Введите ключевые слова (через запятую):")
     return WAITING_FOR_KEYWORDS
 
 # -----------------------------
-# Generate digest
+# Handle keywords
 # -----------------------------
 async def handle_keywords(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keywords = [k.strip() for k in update.message.text.split(",") if k.strip()]
@@ -165,12 +141,9 @@ async def get_posts(client, channel_link, interval):
         start_date = now - timedelta(weeks=1)
     elif interval == "month":
         start_date = now - timedelta(days=30)
-    elif isinstance(interval, tuple):
-        start_date = datetime.fromisoformat(interval[0])
-        end_date = datetime.fromisoformat(interval[1])
     else:
         start_date = now - timedelta(days=1)
-    end_date = now if not isinstance(interval, tuple) else end_date
+    end_date = now
 
     posts_text = []
     async for message in client.iter_messages(channel, offset_date=end_date, reverse=True):
@@ -197,7 +170,7 @@ async def generate_digest(user_data):
     if channels is None or not keywords:
         return None
 
-    client = user_data.get("client")  # Используем уже авторизованный client
+    client = user_data.get("client")
 
     digest_text = "📌 Дайджест по вашим каналам:\n\n"
 
@@ -239,8 +212,6 @@ async def main():
             WAITING_FOR_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_phone_number)],
             WAITING_FOR_FILE: [MessageHandler(filters.Document.ALL, handle_file)],
             WAITING_FOR_INTERVAL: [CallbackQueryHandler(interval_callback, pattern=r"^interval_")],
-            WAITING_FOR_CUSTOM_INTERVAL_FROM: [MessageHandler(filters.TEXT & ~filters.COMMAND, custom_interval_from)],
-            WAITING_FOR_CUSTOM_INTERVAL_TO: [MessageHandler(filters.TEXT & ~filters.COMMAND, custom_interval_to)],
             WAITING_FOR_KEYWORDS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_keywords)],
         },
         fallbacks=[CommandHandler("cancel", cancel)]
@@ -254,4 +225,4 @@ async def main():
 
 if __name__ == "__main__":
     import asyncio
-    asyncio.get_event_loop().run_until_complete(main())  # Запуск основного потока с asyncio
+    asyncio.run(main())  # Запуск основного потока с asyncio
