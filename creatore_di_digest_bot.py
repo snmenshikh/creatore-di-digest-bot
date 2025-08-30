@@ -117,8 +117,14 @@ def get_telethon_credentials() -> Tuple[Optional[str], Optional[str], Optional[s
     session = get_secret("TELETHON_SESSION")  # опционально
     return api_id, api_hash, session
 
+
+# choose Telethon if configured
+api_id, api_hash, session = get_telethon_credentials()
+use_telethon = False
+if api_id and api_hash:
+    use_telethon = True
 # Глобальная переменная для клиента
-client = TelegramClient('session_name', int(API_ID), API_HASH)
+client = TelegramClient(session, int(API_ID), API_HASH)
 
 # -----------------------------
 # Простой SQLite кеш для сообщений
@@ -548,12 +554,6 @@ async def process_digest_for_chat(chat_id: int, context: ContextTypes.DEFAULT_TY
         return
 
     await context.bot.send_message(chat_id, f"Собираю посты из {len(df)} каналов за период {date_from.date()} — {date_to.date()}...")
-
-    # choose Telethon if configured
-    api_id, api_hash, session = get_telethon_credentials()
-    use_telethon = False
-    if api_id and api_hash:
-        use_telethon = True
 
     collected_posts = []  # list of (id, channel, date_iso, text)
     # iterate channels
