@@ -124,7 +124,7 @@ use_telethon = False
 if api_id and api_hash:
     use_telethon = True
 # Глобальная переменная для клиента
-client = TelegramClient(session, int(API_ID), API_HASH)
+client = TelegramClient(session, int(api_id), api_hash)
 
 # -----------------------------
 # Простой SQLite кеш для сообщений
