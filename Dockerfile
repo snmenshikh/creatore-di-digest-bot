@@ -9,17 +9,14 @@ RUN apt-get update && apt-get install -y \
 # Рабочая директория
 WORKDIR /app
 
-# Создание папки под БД (с правами на запись)
-RUN mkdir -p /app/data && chmod -R 777 /app/data
-
 # Копируем зависимости
-COPY requirements.txt /app/
+COPY requirements.txt .
 
 # Устанавливаем Python-зависимости
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Копируем код
-COPY creatore_di_digest_bot.py /app/
+COPY . .
 
 # Запуск бота
 CMD ["python", "creatore_di_digest_bot.py"]

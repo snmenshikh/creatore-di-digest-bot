@@ -1,280 +1,119 @@
 import os
 import pandas as pd
-import tempfile
-from datetime import datetime, timedelta
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
-    ConversationHandler, ContextTypes, filters
-)
 from telethon import TelegramClient
-from docx import Document
 import nltk
 from nltk.tokenize import sent_tokenize
-from typing import List, Tuple, Optional
+from nltk.corpus import stopwords
+from docx import Document
+from apscheduler.schedulers.blocking import BlockingScheduler
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, ReplyKeyboardMarkup
+import datetime
 
-# -----------------------------
-# NLTK
-# -----------------------------
-nltk.download("punkt")
-nltk.download("stopwords")
+# Загрузка необходимых ресурсов для nltk
+nltk.download('punkt')
+nltk.download('stopwords')
 
-# -----------------------------
-# Получение API данных из переменных окружения
-# -----------------------------
-#api_id = os.getenv("TELEGRAM_API_ID")
-#api_hash = os.getenv("TELEGRAM_API_HASH")
+# Получаем токены из переменных окружения
+API_ID = os.getenv("TELETHON_API_ID")
+API_HASH = os.getenv("TELETHON_API_HASH")
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# -----------------------------
-# Безопасное получение секретов
-# -----------------------------
-def get_secret(name: str, docker_secret_path: Optional[str] = None) -> Optional[str]:
-    """
-    Получение секрета:
-    - Сначала пытаемcя прочитать Docker secret (по пути /run/secrets/<name>), если существует
-    - Иначе берем из переменных окружения
-    """
-    # Docker secrets location (standard)
-    secret_file = f"/run/secrets/{name}"
-    if os.path.exists(secret_file):
-        with open(secret_file, "r") as f:
-            return f.read().strip()
-    # fallback to env
-    return os.getenv(name)
+# Настройка клиента Telethon
+client = TelegramClient('bot', API_ID, API_HASH)
 
-def get_telegram_token() -> str:
-    token = get_secret("TELEGRAM_BOT_TOKEN")
-    if not token:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN не задан. Установите в окружении или Docker Secret.")
-    return token
+# Функция для безопасного хранения токенов (уже используется в Portainer через environment переменные)
+def get_tokens_from_env():
+    return {
+        "api_id": os.getenv("TELETHON_API_ID"),
+        "api_hash": os.getenv("TELETHON_API_HASH"),
+        "bot_token": os.getenv("TELEGRAM_BOT_TOKEN")
+    }
 
-def get_telethon_credentials() -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    """
-    Возвращает (api_id, api_hash, session_string).
-    Если api_id/api_hash заданы, можно использовать Telethon для чтения каналов.
-    Если session_string заданы — Telethon может использовать их.
-    """
-    api_id = get_secret("TELETHON_API_ID")
-    api_hash = get_secret("TELETHON_API_HASH")
-    session = get_secret("TELETHON_SESSION")  # опционально
-    return api_id, api_hash, session
-
-# choose Telethon if configured
-api_id, api_hash, session = get_telethon_credentials()
-use_telethon = False
-if api_id and api_hash:
-    use_telethon = True
-
-# Инициализация глобального клиента Telethon
-client = TelegramClient('session_name', int(api_id), api_hash)
-
-# -----------------------------
-# Состояния диалога с чатом
-# -----------------------------
-WAITING_FOR_FILE = 1
-WAITING_FOR_INTERVAL = 2
-WAITING_FOR_CUSTOM_INTERVAL_FROM = 3
-WAITING_FOR_CUSTOM_INTERVAL_TO = 4
-WAITING_FOR_KEYWORDS = 5
-
-# -----------------------------
-# Start & cancel handlers
-# -----------------------------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Пришли Excel-файл с именами/адресами каналов.")
-    return WAITING_FOR_FILE
-
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Операция отменена", reply_markup=ReplyKeyboardRemove())
-    return ConversationHandler.END
-
-async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Неизвестная команда. Используйте /start для начала.")
-
-# -----------------------------
-# Handle Excel file
-# -----------------------------
-async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    document = update.message.document
-    if not document:
-        await update.message.reply_text("Пожалуйста, загрузите Excel-файл.")
-        return WAITING_FOR_FILE
-
-    with tempfile.NamedTemporaryFile(delete=False) as tf:
-        tg_file = await document.get_file()
-        await tg_file.download_to_drive(tf.name)
-        file_path = tf.name
-
-    ext = os.path.splitext(document.file_name)[-1].lower()
+# Функция для обработки Excel файла
+def validate_excel(file_path):
     try:
-        if ext == ".xlsx":
-            df = pd.read_excel(file_path, engine="openpyxl")
-        elif ext == ".xls":
-            df = pd.read_excel(file_path, engine="xlrd")
-        else:
-            await update.message.reply_text("Неподдерживаемый формат. Используйте .xls или .xlsx")
-            return WAITING_FOR_FILE
+        # Загружаем файл Excel
+        df = pd.read_excel(file_path)
+
+        # Проверяем, что в таблице есть нужные столбцы
+        required_columns = ['Имя канала', 'Адрес канала']
+        if not all(col in df.columns for col in required_columns):
+            raise ValueError("Excel файл должен содержать столбцы: 'Имя канала' и 'Адрес канала'")
+
+        return df
     except Exception as e:
-        await update.message.reply_text(f"Ошибка при чтении Excel: {e}")
-        return WAITING_FOR_FILE
-
-    context.user_data["channels"] = df
-
-    keyboard = [
-        [InlineKeyboardButton("Сутки", callback_data="interval_day")],
-        [InlineKeyboardButton("Неделя", callback_data="interval_week")],
-        [InlineKeyboardButton("Месяц", callback_data="interval_month")],
-        [InlineKeyboardButton("Задайте произвольный интервал", callback_data="interval_custom")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Выберите интервал времени:", reply_markup=reply_markup)
-    return WAITING_FOR_INTERVAL
-
-# -----------------------------
-# Interval handlers
-# -----------------------------
-async def interval_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data.replace("interval_", "")
-    if data == "custom":
-        await query.edit_message_text("Введите дату начала интервала (ГГГГ-ММ-ДД):")
-        return WAITING_FOR_CUSTOM_INTERVAL_FROM
-    else:
-        context.user_data["interval"] = data
-        await query.edit_message_text("Введите ключевые слова (через запятую):")
-        return WAITING_FOR_KEYWORDS
-
-async def custom_interval_from(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["custom_from"] = update.message.text.strip()
-    await update.message.reply_text("Введите дату окончания интервала (ГГГГ-ММ-ДД):")
-    return WAITING_FOR_CUSTOM_INTERVAL_TO
-
-async def custom_interval_to(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    custom_from = context.user_data.get("custom_from")
-    custom_to = update.message.text.strip()
-    context.user_data["interval"] = (custom_from, custom_to)
-    await update.message.reply_text("Введите ключевые слова (через запятую):")
-    return WAITING_FOR_KEYWORDS
-
-# -----------------------------
-# Generate digest
-# -----------------------------
-async def handle_keywords(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keywords = [k.strip() for k in update.message.text.split(",") if k.strip()]
-    context.user_data["keywords"] = keywords
-
-    await update.message.reply_text(
-        "Файл принят ✅\nИнтервал задан ✅\nКлючевые слова сохранены ✅\n\nГотовлю дайджест...",
-        reply_markup=ReplyKeyboardRemove()
-    )
-
-    digest_path = await generate_digest(context.user_data)
-
-    if digest_path and os.path.exists(digest_path):
-        await update.message.reply_document(open(digest_path, "rb"), filename="digest.docx")
-    else:
-        await update.message.reply_text("Не удалось создать дайджест 😢")
-
-    return ConversationHandler.END
-
-# -----------------------------
-# Telegram post fetching + summarization
-# -----------------------------
-async def get_posts(client, channel_link, interval):
-    await client.start()
-    channel = await client.get_entity(channel_link)
-    now = datetime.utcnow()
-
-    if interval == "day":
-        start_date = now - timedelta(days=1)
-    elif interval == "week":
-        start_date = now - timedelta(weeks=1)
-    elif interval == "month":
-        start_date = now - timedelta(days=30)
-    elif isinstance(interval, tuple):
-        start_date = datetime.fromisoformat(interval[0])
-        end_date = datetime.fromisoformat(interval[1])
-    else:
-        start_date = now - timedelta(days=1)
-    end_date = now if not isinstance(interval, tuple) else end_date
-
-    posts_text = []
-    async for message in client.iter_messages(channel, offset_date=end_date, reverse=True):
-        if message.date < start_date:
-            break
-        if message.text:
-            posts_text.append((message.date, message.text))
-    return posts_text
-
-def summarize_text(text, keywords=None):
-    sentences = sent_tokenize(text)
-    if keywords:
-        keywords = [k.lower() for k in keywords]
-        filtered = [s for s in sentences if any(k in s.lower() for k in keywords)]
-        return "\n".join(filtered[:5])
-    else:
-        return "\n".join(sentences[:5])
-
-async def generate_digest(user_data):
-    channels = user_data.get("channels")
-    interval = user_data.get("interval")
-    keywords = user_data.get("keywords", [])
-
-    if channels is None or not keywords:
+        print(f"Ошибка при обработке Excel файла: {e}")
         return None
 
-    await client.start()
+# Функция для фильтрации сообщений по тегам
+def filter_messages(messages, keywords):
+    filtered_messages = []
+    for message in messages:
+        if any(keyword.lower() in message.text.lower() for keyword in keywords):
+            filtered_messages.append(message)
+    return filtered_messages
 
-    digest_text = "📌 Дайджест по вашим каналам:\n\n"
-
-    for _, row in channels.iterrows():
-        channel_name = row[0]
-        channel_link = row[1]
-        posts = await get_posts(client, channel_link, interval)
-        if not posts:
-            digest_text += f"{channel_name} ({channel_link}): Нет сообщений за этот интервал\n"
-            continue
-        digest_text += f"--- {channel_name} ({channel_link}) ---\n"
-        for date, text in posts:
-            if text:
-                summary = summarize_text(text, keywords)
-                digest_text += f"{date.date()}: {summary}\n"
-            else:
-                digest_text += f"{date.date()}: (Пустое сообщение)\n"
-
-    output_dir = "/app/data"
-    os.makedirs(output_dir, exist_ok=True)
-    digest_path = os.path.join(output_dir, "digest.docx")
-
+# Функция для создания дайджеста и сохранения его в .docx
+def create_digest(messages, filename="digest.docx"):
     doc = Document()
-    doc.add_heading("Дайджест", 0)
-    doc.add_paragraph(digest_text)
-    doc.save(digest_path)
+    doc.add_heading('Дайджест сообщений', 0)
 
-    return digest_path
+    for msg in messages:
+        doc.add_paragraph(f"{msg.sender_id}: {msg.text}")
+        doc.add_paragraph(f"Источник: [ссылка на канал](https://t.me/{msg.sender_id})")
+        doc.add_paragraph(f"Дата: {msg.date.strftime('%Y-%m-%d %H:%M:%S')}")
+        doc.add_paragraph("")
 
-# -----------------------------
-# Main
-# -----------------------------
+    doc.save(filename)
+
+# Функция для обработки команды /start
+def start(update: Update, context: CallbackContext):
+    update.message.reply_text("Привет! Пожалуйста, отправьте мне Excel файл с каналами.")
+
+# Функция для обработки полученного файла
+def handle_file(update: Update, context: CallbackContext):
+    file = update.message.document.get_file()
+    file.download('channels.xlsx')
+    channels_df = validate_excel('channels.xlsx')
+
+    if channels_df is None:
+        update.message.reply_text("Произошла ошибка при обработке файла.")
+        return
+
+    update.message.reply_text("Файл успешно загружен. Укажите интервал для дайджеста.")
+
+# Функция для выбора интервала
+def choose_interval(update: Update, context: CallbackContext):
+    keyboard = [
+        ['Сутки', 'Неделя', 'Месяц'],
+        ['Произвольный интервал']
+    ]
+    update.message.reply_text('Выберите интервал для дайджеста:', reply_markup=ReplyKeyboardMarkup(keyboard))
+
+# Функция для отправки дайджеста (по расписанию)
+def scheduled_task():
+    print("Отправка регулярного дайджеста")
+
+# Планируем задачу на утро (например, каждый день в 7 утра)
+scheduler = BlockingScheduler()
+scheduler.add_job(scheduled_task, 'interval', days=1, start_date='2025-08-31 07:00:00')
+
+scheduler.start()
+
+# Функция для запуска бота
 def main():
-    application = ApplicationBuilder().token(os.getenv("TELEGRAM_API_TOKEN")).build()
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dispatcher = updater.dispatcher
 
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            WAITING_FOR_FILE: [MessageHandler(filters.Document.ALL, handle_file)],
-            WAITING_FOR_INTERVAL: [CallbackQueryHandler(interval_callback, pattern=r"^interval_")],
-            WAITING_FOR_CUSTOM_INTERVAL_FROM: [MessageHandler(filters.TEXT & ~filters.COMMAND, custom_interval_from)],
-            WAITING_FOR_CUSTOM_INTERVAL_TO: [MessageHandler(filters.TEXT & ~filters.COMMAND, custom_interval_to)],
-            WAITING_FOR_KEYWORDS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_keywords)]
-        },
-        fallbacks=[CommandHandler("cancel", cancel)]
-    )
+    # Обработчики
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(MessageHandler(Filters.document.mime_type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), handle_file))
+    dispatcher.add_handler(MessageHandler(Filters.text, choose_interval))
 
-    application.add_handler(conv_handler)
-    application.add_handler(MessageHandler(filters.COMMAND, unknown))
-    application.run_polling()
+    # Запуск бота
+    updater.start_polling()
+    updater.idle()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
