@@ -1,11 +1,12 @@
 version: "3.9"
 services:
-  telegram_bot:
+  creatore_di_digest_bot:
     build: .
-    container_name: telegram_digest_bot
+    container_name: creatore_di_digest_bot
     volumes:
       - ./data:/app/data
     environment:
+      - TELEGRAM_API_TOKEN=${TELEGRAM_API_TOKEN}
       - TELEGRAM_API_ID=${TELEGRAM_API_ID}
       - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
     restart: always
