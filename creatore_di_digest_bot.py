@@ -27,12 +27,12 @@ api_hash = os.getenv("TELEGRAM_API_HASH")
 # -----------------------------
 # Conversation states
 # -----------------------------
-WAITING_FOR_FILE = 1
-WAITING_FOR_INTERVAL = 2
-WAITING_FOR_CUSTOM_INTERVAL_FROM = 3
-WAITING_FOR_CUSTOM_INTERVAL_TO = 4
-WAITING_FOR_KEYWORDS = 5
-WAITING_FOR_PHONE = 6  # Состояние для запроса номера телефона
+WAITING_FOR_PHONE = 1
+WAITING_FOR_FILE = 2
+WAITING_FOR_INTERVAL = 3
+WAITING_FOR_CUSTOM_INTERVAL_FROM = 4
+WAITING_FOR_CUSTOM_INTERVAL_TO = 5
+WAITING_FOR_KEYWORDS = 6
 
 # -----------------------------
 # Start & cancel handlers
@@ -49,24 +49,16 @@ async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Неизвестная команда. Используйте /start для начала.")
 
 # -----------------------------
-# Request phone number
+# Handle phone number
 # -----------------------------
-async def request_phone_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Пожалуйста, отправьте свой номер телефона (с кодом страны, например, +1234567890):")
-    return WAITING_FOR_PHONE
-
 async def handle_phone_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     phone_number = update.message.text.strip()
     if phone_number:
-        # Создаем и запускаем TelegramClient
+        # Авторизация через номер телефона
         client = TelegramClient('session_name', int(api_id), api_hash)
-        await client.start(phone=phone_number)  # Авторизация через номер телефона
-        await update.message.reply_text("Телефон успешно зарегистрирован!")
-
-        # Сохраняем клиент для дальнейшего использования
+        await client.start(phone=phone_number)
         context.user_data["client"] = client
-
-        # Переходим к следующему шагу: загрузка файла
+        await update.message.reply_text("Телефон успешно зарегистрирован!")
         return WAITING_FOR_FILE
     else:
         await update.message.reply_text("Пожалуйста, отправьте действительный номер телефона.")
