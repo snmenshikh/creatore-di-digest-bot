@@ -6,8 +6,8 @@ services:
     container_name: creatore_di_digest_bot
     restart: always # Политика перезапуска: бот будет перезапускаться всегда
     environment: # Здесь будут передаваться переменные окружения
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN} # Placeholder для токена бота
-      - TELETHON_API_ID=${TELETHON_API_ID}
-      - TELETHON_API_HASH=${TELETHON_API_HASH}
+      - BOT_TOKEN=${BOT_TOKEN} # Placeholder для токена бота
+      - API_ID=${API_ID}
+      - API_HASH=${API_HASH}
     volumes:
       - ./data:/app/data
