@@ -69,10 +69,12 @@ def create_digest(messages, filename="digest.docx"):
 
 # Функция для обработки команды /start
 async def start(update: Update, context: CallbackContext):
+    print("Received /start command")
     await update.message.reply_text("Привет! Пожалуйста, отправьте мне Excel файл с каналами.")
 
 # Функция для обработки полученного файла
 async def handle_file(update: Update, context: CallbackContext):
+    print("Received file")
     file = update.message.document.get_file()
     file.download('channels.xlsx')
     channels_df = validate_excel('channels.xlsx')
@@ -85,6 +87,7 @@ async def handle_file(update: Update, context: CallbackContext):
 
 # Функция для выбора интервала
 async def choose_interval(update: Update, context: CallbackContext):
+    print("Selecting interval")
     keyboard = [
         ['Сутки', 'Неделя', 'Месяц'],
         ['Произвольный интервал']
@@ -102,7 +105,8 @@ scheduler.add_job(scheduled_task, 'interval', days=1, start_date='2025-08-31 07:
 scheduler.start()
 
 # Функция для запуска бота
-def main():
+async def main():
+    print("Starting bot")
     application = Application.builder().token(BOT_TOKEN).build()
 
     # Обработчики
@@ -111,7 +115,8 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT, choose_interval))
 
     # Запуск бота
-    application.run_polling()
+    await application.run_polling()
 
 if __name__ == '__main__':
-    main()
+    import asyncio
+    asyncio.run(main())
